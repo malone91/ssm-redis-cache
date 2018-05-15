@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:cache="http://www.springframework.org/schema/cache"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans  
+                        http://www.springframework.org/schema/beans/spring-beans-3.1.xsd  
+                        http://www.springframework.org/schema/context  
+                        http://www.springframework.org/schema/context/spring-context-3.1.xsd  
+                        http://www.springframework.org/schema/cache
+                        http://www.springframework.org/schema/cache/spring-cache.xsd">
+    
+    <!-- 自动扫描，不扫描Controller注解 -->
+    <context:component-scan base-package="com.melo">
+        <context:exclude-filter type="annotation" expression="org.springframework.stereotype.Controller"/>
+    </context:component-scan>
+    <!--与redis缓存相关,启用Spring对基于注解的Cache的支持 -->
+    <!-- 有一个cache-manager属性用来指定当前所使用的CacheManager对应的bean的名称，
+    默认是cacheManager，所以当我们的CacheManager的id为 cacheManager 时我们可以不指定该参数，否则就需要我们指定了-->
+    <cache:annotation-driven cache-manager="redisCacheManager"/>
+
+    <!-- 引入读取配置文件的类 -->
+    <bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+        <property name="locations">
+            <list>
+                <value>classpath:jdbc.properties</value>
+                <value>classpath:redis.properties</value>
+            </list>
+        </property>
+    </bean>
+
+    <!-- 配置druid数据库连接池 -->
+    <bean id="dataSource" class="com.alibaba.druid.pool.DruidDataSource" init-method="init" destroy-method="close">
+        <property name="driverClassName" value="${jdbc.driver}"/>
+        <property name="url" value="${jdbc.url}"/>
+        <property name="username" value="${jdbc.username}"/>
+        <property name="password" value="${jdbc.password}"/>
+        <!-- 连接池最大使用连接数 -->
+        <property name="maxActive" value="20"/>
+        <!-- 初始化连接大小 -->
+        <property name="initialSize" value="${jdbc.initialPoolSize}"/>
+        <!-- 获取连接最大等待时间 -->
+        <property name="maxWait" value="60000"/>
+        <!-- 连接池最大空闲 -->
+        <!--<property name="maxIdle" value="20"/>-->
+        <!-- 连接池最小空闲 -->
+        <property name="minIdle" value="3"/>
+        <!-- 自动清除无用连接 -->
+        <property name="removeAbandoned" value="true"/>
+        <!-- 清除无用连接的等待时间 -->
+        <property name="removeAbandonedTimeout" value="180"/>
+    </bean>
+
+    <!-- spring和MyBatis完美整合，不需要mybatis的配置映射文件 -->
+    <bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
+        <property name="dataSource" ref="dataSource"/>
+        <property name="configLocation" value="classpath:/mybatis-config.xml"/>
+        <property name="mapperLocations" value="classpath:com/melo/mapping/*.xml"/>
+    </bean>
+
+    <!-- DAO接口所在包名，Spring会自动查找其下的类 -->
+    <bean class="org.mybatis.spring.mapper.MapperScannerConfigurer">
+        <property name="basePackage" value="com.melo.dao"/>
+        <property name="sqlSessionFactoryBeanName" value="sqlSessionFactory"/>
+    </bean>
+
+    <!-- 事务管理 -->
+    <bean id="transactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+        <property name="dataSource" ref="dataSource"/>
+    </bean>
+
+    <!-- redis config start -->
+    <!-- 配置jedispoolconfig -->
+    <bean id="poolConfig" class="redis.clients.jedis.JedisPoolConfig">
+        <property name="maxIdle" value="${redis.maxIdle}"/>
+        <property name="maxTotal" value="${redis.maxActive}"/>
+        <property name="maxWaitMillis" value="${redis.maxWait}"/>
+        <property name="testOnBorrow" value="${redis.testOnBorrow}"/>
+    </bean>
+    <!-- 配置JedisConnectionFactory -->
+    <bean id="jedisConnectionFactory" class="org.springframework.data.redis.connection.jedis.JedisConnectionFactory">
+        <property name="hostName" value="${redis.host}"/>
+        <property name="port" value="${redis.port}"/>
+        <!--<property name="password" value="${redis.pass}"/>-->
+        <property name="database" value="${redis.dbIndex}"/>
+        <property name="poolConfig" ref="poolConfig"/>
+    </bean>
+    <!-- 配置jedisTemplate -->
+    <bean id="redisTemplate" class="org.springframework.data.redis.core.RedisTemplate">
+        <property name="connectionFactory" ref="jedisConnectionFactory"/>
+    </bean>
+    <!-- 配置redisCacheManager -->
+    <bean id="redisCacheManager" class="org.springframework.data.redis.cache.RedisCacheManager">
+        <constructor-arg name="redisOperations" ref="redisTemplate"/>
+        <property name="defaultExpiration" value="${redis.expiration}"/>
+    </bean>
+    <!-- 配置redisCacheConfig -->
+    <bean id="redisCacheConfig" class="com.melo.util.RedisCacheConfig">
+        <constructor-arg name="jedisConnectionFactory" ref="jedisConnectionFactory"/>
+        <constructor-arg name="redisCacheManager" ref="redisCacheManager"/>
+        <constructor-arg name="redisTemplate" ref="redisTemplate"/>
+    </bean>
+    <!-- redis config end -->
+</beans>
